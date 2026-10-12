@@ -1,0 +1,37 @@
+{
+  "selected_model": "tft_inspired",
+  "model_type": "tft_inspired",
+  "features": [
+    "air_temperature_mean",
+    "air_temperature_max",
+    "air_temperature_min",
+    "dew_point_temperature",
+    "relative_humidity",
+    "wind_speed",
+    "surface_pressure",
+    "solar_radiation",
+    "month",
+    "day_of_year",
+    "seasonal_cycle_sin",
+    "seasonal_cycle_cos",
+    "temperature_imputed_flag"
+  ],
+  "targets": [
+    "air_temperature_min",
+    "air_temperature_max",
+    "air_temperature_mean",
+    "rainfall_total",
+    "snowfall_total"
+  ],
+  "lookback_days": 30,
+  "forecast_horizon_days": 7,
+  "training_end_year": 2023,
+  "validation_year": 2024,
+  "test_year": 2025,
+  "seed": 42,
+  "pytorch_version": "2.11.0+cu128",
+  "feature_scaler": "../preprocessing/feature_scaler.joblib",
+  "target_scaler": "../preprocessing/target_scaler.joblib",
+  "target_units_confirmed": false,
+  "notes": "Confirm target units/source definitions and review temperature imputation-stratified metrics before deployment."
+}
