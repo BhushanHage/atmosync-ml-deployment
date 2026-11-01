@@ -1,6 +1,0 @@
-evaluation,target,observed_values,MAE,RMSE
-final_test_original_missingness,air_temperature_min,22617,3.2211327311070708,4.330754624934481
-final_test_original_missingness,air_temperature_max,22617,3.74919588535326,4.90649371897204
-final_test_original_missingness,air_temperature_mean,22617,3.16129815179796,4.203950277130743
-final_test_original_missingness,rainfall_total,22617,2.5467218051207308,5.2061860513468075
-final_test_original_missingness,snowfall_total,22617,0.385154507551628,1.1837392900975539

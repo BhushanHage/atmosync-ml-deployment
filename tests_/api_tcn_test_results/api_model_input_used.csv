@@ -1,2 +1,0 @@
-station_id,history_start,history_end,temperature_history_count,input_missing_cells,missing_air_temperature_mean,missing_air_temperature_max,missing_air_temperature_min,missing_dew_point_temperature,missing_relative_humidity,missing_wind_speed,missing_surface_pressure,missing_solar_radiation,missing_month,missing_day_of_year,missing_seasonal_cycle_sin,missing_seasonal_cycle_cos,missing_temperature_imputed_flag
-6158355,2026-09-02,2026-10-01,87,153,1,1,1,30,30,30,30,30,0,0,0,0,0
