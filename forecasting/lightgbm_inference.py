@@ -13,7 +13,7 @@ MODEL_DIR = Path(os.getenv('ATMOSYNC_LIGHTGBM_MODEL_DIR', ROOT / 'models' / 'Lig
 API_BASE = os.getenv('ATMOSYNC_WEATHER_API_BASE_URL', 'https://atmosyncv2-0.onrender.com').rstrip('/')
 STATIONS = {
  'vancouver':'1108446','edmonton':'3012209','calgary':'3031094','winnipeg':'502S001',
- 'ottawa':'6105978','toronto':'6158355','montreal':'7014160','quebec_city':'701S001','halifax':'8202251'
+ 'ottawa':'6105978','toronto':'6158355','montreal':'7014160','quebec city':'701S001','halifax':'8202251'
 }
 ALIASES = {
  'Max Temp (°C)':['max_temperature','max_temp_c','maximum_temperature'],
