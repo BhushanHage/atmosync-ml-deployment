@@ -1,0 +1,48 @@
+{
+  "model_type": "missing_aware_tcn",
+  "features": [
+    "air_temperature_mean",
+    "air_temperature_max",
+    "air_temperature_min",
+    "dew_point_temperature",
+    "relative_humidity",
+    "wind_speed",
+    "surface_pressure",
+    "solar_radiation",
+    "month",
+    "day_of_year",
+    "seasonal_cycle_sin",
+    "seasonal_cycle_cos",
+    "temperature_imputed_flag"
+  ],
+  "excluded_features_all_missing_in_training": [],
+  "targets": [
+    "air_temperature_min",
+    "air_temperature_max",
+    "air_temperature_mean",
+    "rainfall_total",
+    "snowfall_total"
+  ],
+  "input_channels": 26,
+  "value_feature_count": 13,
+  "mask_feature_count": 13,
+  "lookback_days": 30,
+  "forecast_horizon_days": 7,
+  "training_end": "2023-12-31",
+  "validation_period": [
+    "2024-01-01",
+    "2024-12-31"
+  ],
+  "final_test_period": [
+    "2025-01-01",
+    "2025-12-31"
+  ],
+  "input_missing_policy": "median imputation fitted on training rows; append per-feature missingness masks",
+  "training_missingness_augmentation": "random cell masking 3-20%; occasional 1-7 day single-feature outages",
+  "target_missing_policy": "masked Huber loss; missing labels excluded, never treated as zero",
+  "calendar_policy": "do not synthesize missing dates; only use 37-row windows with consecutive daily dates",
+  "target_units_confirmed": false,
+  "seed": 42,
+  "pytorch_version": "2.11.0+cu128",
+  "notes": "Must update inference API to apply identical imputer, scaler, mask concatenation and feature ordering."
+}
