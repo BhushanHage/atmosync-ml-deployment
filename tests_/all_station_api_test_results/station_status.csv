@@ -1,0 +1,10 @@
+city,climate_identifier,status,history_rows,actual_rows
+Toronto,6158355,evaluated,30,7
+Montreal,7014160,insufficient_history_rows,29,7
+Vancouver,1108446,insufficient_history_rows,29,7
+Calgary,3031094,insufficient_history_rows,29,7
+Edmonton,3012209,insufficient_history_rows,29,7
+Ottawa,6105978,insufficient_history_rows,29,7
+Winnipeg,502S001,insufficient_history_rows,29,7
+Quebec City,701S001,insufficient_history_rows,29,7
+Halifax,8202251,insufficient_history_rows,29,7

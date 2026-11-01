@@ -1,0 +1,93 @@
+{
+  "features": [
+    "air_temperature_min",
+    "air_temperature_max",
+    "air_temperature_mean",
+    "rainfall_total",
+    "snowfall_total",
+    "dew_point_temperature",
+    "relative_humidity",
+    "wind_speed",
+    "surface_pressure",
+    "solar_radiation",
+    "month",
+    "day_of_year",
+    "seasonal_cycle_sin",
+    "seasonal_cycle_cos",
+    "temperature_imputed_flag"
+  ],
+  "targets": [
+    "air_temperature_min",
+    "air_temperature_max",
+    "air_temperature_mean",
+    "rainfall_total",
+    "snowfall_total"
+  ],
+  "feature_medians": {
+    "air_temperature_min": 3.196681415929204,
+    "air_temperature_max": 12.2,
+    "air_temperature_mean": 7.7,
+    "rainfall_total": 0.0,
+    "snowfall_total": 0.0,
+    "dew_point_temperature": 2.34,
+    "relative_humidity": 81.83,
+    "wind_speed": 3.15,
+    "surface_pressure": 98.59,
+    "solar_radiation": 11.27,
+    "month": 7.0,
+    "day_of_year": 184.0,
+    "seasonal_cycle_sin": 0.0,
+    "seasonal_cycle_cos": 0.0043035382962438,
+    "temperature_imputed_flag": 0.0
+  },
+  "feature_mean": {
+    "air_temperature_min": 1.6674345727700248,
+    "air_temperature_max": 11.456732184586512,
+    "air_temperature_mean": 6.569619969894713,
+    "rainfall_total": 2.3189646709022314,
+    "snowfall_total": 0.35627438605349154,
+    "dew_point_temperature": 1.9262167431031822,
+    "relative_humidity": 80.71058119801965,
+    "wind_speed": 3.5395353501353415,
+    "surface_pressure": 97.28630594241315,
+    "solar_radiation": 12.681920870675023,
+    "month": 6.531675572572615,
+    "day_of_year": 183.3729540960155,
+    "seasonal_cycle_sin": -0.0023224447797382344,
+    "seasonal_cycle_cos": 0.0009687619177016346,
+    "temperature_imputed_flag": 0.01360429727493303
+  },
+  "feature_std": {
+    "air_temperature_min": 11.265911793195773,
+    "air_temperature_max": 11.946941737816259,
+    "air_temperature_mean": 11.411787386715512,
+    "rainfall_total": 5.964593967773751,
+    "snowfall_total": 1.4509995632372368,
+    "dew_point_temperature": 10.3953661308682,
+    "relative_humidity": 12.243242335944528,
+    "wind_speed": 1.8373973783329527,
+    "surface_pressure": 3.809665683059901,
+    "solar_radiation": 8.03306819232294,
+    "month": 3.4502673969465207,
+    "day_of_year": 105.48501401221445,
+    "seasonal_cycle_sin": 0.707097459410881,
+    "seasonal_cycle_cos": 0.7071116253076674,
+    "temperature_imputed_flag": 0.11584135863585607
+  },
+  "target_mean": {
+    "air_temperature_min": 1.6674345727700248,
+    "air_temperature_max": 11.456732184586512,
+    "air_temperature_mean": 6.569619969894713,
+    "rainfall_total": 2.3189646709022314,
+    "snowfall_total": 0.35627438605349154
+  },
+  "target_std": {
+    "air_temperature_min": 11.265911793195773,
+    "air_temperature_max": 11.946941737816259,
+    "air_temperature_mean": 11.411787386715512,
+    "rainfall_total": 5.964593967773751,
+    "snowfall_total": 1.4509995632372368
+  },
+  "lookback_days": 30,
+  "forecast_horizon_days": 7
+}

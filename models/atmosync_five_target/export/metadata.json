@@ -1,0 +1,31 @@
+{
+  "dataset_path": "/kaggle/input/datasets/bhushanhage/eccc-nasa-open-metro-data-preprocessed-csv/eccc_nasa_open_metro_data_preprocessed.csv",
+  "dataset_sha256": "28b9a25e82ceaacdec25a2df98b142141bf2fabbd5bc725917a818ffe01e1461",
+  "rows": 77880,
+  "stations": 9,
+  "features": [
+    "air_temperature_min",
+    "air_temperature_max",
+    "air_temperature_mean",
+    "rainfall_total",
+    "snowfall_total",
+    "dew_point_temperature",
+    "relative_humidity",
+    "wind_speed",
+    "surface_pressure",
+    "solar_radiation",
+    "month",
+    "day_of_year",
+    "seasonal_cycle_sin",
+    "seasonal_cycle_cos",
+    "temperature_imputed_flag"
+  ],
+  "targets": [
+    "air_temperature_min",
+    "air_temperature_max",
+    "air_temperature_mean",
+    "rainfall_total",
+    "snowfall_total"
+  ],
+  "created_utc": "2026-10-15T10:40:49.697060+00:00"
+}

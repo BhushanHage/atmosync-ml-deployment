@@ -1,0 +1,2 @@
+city,n,mae_vs_total_precipitation_proxy,rmse_vs_total_precipitation_proxy,warning
+Toronto,7,4.436181334086827,5.8981233263810084,Proxy only: total precipitation is not confirmed equivalent to rainfall_total
