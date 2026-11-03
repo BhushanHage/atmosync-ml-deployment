@@ -15,6 +15,8 @@ STATIONS = {
  'vancouver':'1108446','edmonton':'3012209','calgary':'3031094','winnipeg':'502S001',
  'ottawa':'6105978','toronto':'6158355','montreal':'7014160','quebec city':'701S001','halifax':'8202251'
 }
+# API route slugs are not always identical to the public-facing station names.
+API_STATION_SLUGS = {station: station.replace(' ', '_') for station in STATIONS}
 ALIASES = {
  'Max Temp (°C)':['max_temperature','max_temp_c','maximum_temperature'],
  'Min Temp (°C)':['min_temperature','min_temp_c','minimum_temperature'],
@@ -35,7 +37,13 @@ class LightGBMForecaster:
  def fetch_history(self, station:str, end_date:date)->pd.DataFrame:
   if station not in STATIONS: raise ValueError(f'Unknown station {station!r}. Choose from {", ".join(STATIONS)}')
   start=end_date-timedelta(days=self.lookback-1)
-  r=requests.get(f'{API_BASE}/weather/{station}',params={'start_date':start.isoformat(),'end_date':end_date.isoformat()},timeout=60); r.raise_for_status()
+  api_station = API_STATION_SLUGS[station]
+  r=requests.get(
+   f'{API_BASE}/weather/{api_station}',
+   params={'start_date':start.isoformat(),'end_date':end_date.isoformat()},
+   timeout=60
+  )
+  r.raise_for_status()
   payload=r.json()
   if isinstance(payload,list): records=payload
   elif isinstance(payload,dict):
@@ -46,8 +54,17 @@ class LightGBMForecaster:
   if df.empty: raise ValueError('Weather API returned no history records')
   date_col=next((c for c in ('observation_date','Date/Time','date','forecast_date') if c in df.columns),None)
   if not date_col: raise ValueError('Weather API response has no observation date column')
-  df['__date']=pd.to_datetime(df[date_col],errors='coerce').dt.normalize(); df=df.dropna(subset=['__date'])
-  df=df[(df['__date']>=pd.Timestamp(start))&(df['__date']<=pd.Timestamp(end_date))].sort_values('__date').drop_duplicates('__date',keep='last').set_index('__date').asfreq('D')
+  df['__date'] = pd.to_datetime(df[date_col], errors='coerce').dt.normalize()
+  df = df.dropna(subset=['__date'])
+  df = df[
+   (df['__date'] >= pd.Timestamp(start))
+   & (df['__date'] <= pd.Timestamp(end_date))
+  ].sort_values('__date').drop_duplicates('__date', keep='last').set_index('__date')
+
+  # Reindex to the requested calendar, not the first/last returned observation.
+  # This preserves missing leading, trailing, and internal dates as NaN rows.
+  calendar = pd.date_range(start=start, end=end_date, freq='D', name='__date')
+  df = df.reindex(calendar)
   for feature, aliases in ALIASES.items():
    col=next((c for c in aliases if c in df.columns),None)
    df[feature]=pd.to_numeric(df[col],errors='coerce') if col else np.nan
