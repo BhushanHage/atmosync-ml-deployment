@@ -6,7 +6,7 @@ import os
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
 from typing import Any
-
+from zoneinfo import ZoneInfo
 import numpy as np
 import pandas as pd
 import requests
@@ -351,7 +351,10 @@ def refresh_forecasts(
     url, key = supabase_config()
 
     # Use yesterday as the historical data cutoff.
-    as_of = end_date or (date.today() - timedelta(days=1))
+    india_today = pd.Timestamp.now(
+    tz=ZoneInfo("Asia/Kolkata")
+    ).date()
+    as_of = end_date or (india_today - timedelta(days=1))
 
     generated = []
     errors = []
