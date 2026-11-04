@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import logging
 import os
+import time
+import math
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
 from typing import Any
@@ -14,7 +16,10 @@ import requests
 from fastapi import FastAPI, HTTPException, Header, Query
 from pydantic import BaseModel, Field
 
-from forecasting.lightgbm_inference import LightGBMForecaster, STATIONS
+from forecasting.lightgbm_inference import (
+    LightGBMForecaster,
+    STATIONS,
+)
 
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -80,8 +85,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="ATMOSYNC Forecast API",
-    description="ATMOSYNC LightGBM saved-forecast API with legacy TCN routes retained.",
-    version="2.1.0",
+    description="ATMOSYNC forecast API with read-only observation access and field-level forecast fallback.",
+    version="2.2.0",
     lifespan=lifespan,
 )
 
@@ -104,6 +109,7 @@ def root():
         "legacy_prediction_endpoint": "POST /predict",
         "forecasts_endpoint": "GET /forecasts",
         "refresh_endpoint": "POST /forecasts/refresh",
+        "weather_endpoint": "GET /weather/{city}",
     }
 
 
@@ -135,6 +141,9 @@ def health():
                 os.getenv("SUPABASE_SERVICE_ROLE_KEY")
                 or os.getenv("SUPABASE_KEY")
             )
+        ),
+        "observation_storage_configured": bool(
+            os.getenv("OBSERVATION_DATABASE_URL")
         ),
     }
 
@@ -310,6 +319,166 @@ def get_forecasts(
     }
 
 
+
+# --------------------------------------------------
+# WEATHER OBSERVATIONS WITH SAVED-FORECAST FALLBACK
+# --------------------------------------------------
+
+OBSERVATION_COLUMNS = (
+    "mean_temperature", "mean_temperature_flag",
+    "min_temperature", "min_temperature_flag",
+    "max_temperature", "max_temperature_flag",
+    "total_precipitation", "total_precipitation_flag",
+    "total_rain", "total_rain_flag",
+    "total_snow", "total_snow_flag",
+    "snow_on_ground", "snow_on_ground_flag",
+    "direction_max_gust", "direction_max_gust_flag",
+    "speed_max_gust", "speed_max_gust_flag",
+    "cooling_degree_days", "cooling_degree_days_flag",
+    "heating_degree_days", "heating_degree_days_flag",
+    "min_relative_humidity", "min_relative_humidity_flag",
+)
+
+FORECAST_FALLBACK_FIELDS = {
+    "min_temperature": "min_temp_c",
+    "mean_temperature": "mean_temp_c",
+    "max_temperature": "max_temp_c",
+    "total_precipitation": "precip_mm",
+}
+
+def normalize_station(city: str) -> tuple[str, str]:
+    """Return canonical inference key and public climate station ID."""
+    key = city.strip().lower().replace("_", " ")
+    if key not in STATIONS:
+        valid = ", ".join(sorted(STATIONS))
+        raise HTTPException(404, detail=f"Unknown station. Choose: {valid}")
+    return key, STATIONS[key]
+
+
+def read_observations_read_only(station_id: str, start_date: date, end_date: date):
+    database_url = os.getenv("OBSERVATION_DATABASE_URL")
+    if not database_url:
+        raise HTTPException(
+            503,
+            detail="Observation database is not configured. Set OBSERVATION_DATABASE_URL.",
+        )
+
+    columns = ", ".join(("climate_identifier", "observation_date", *OBSERVATION_COLUMNS))
+    query = f"""
+        SELECT {columns}
+        FROM weather_observations
+        WHERE climate_identifier = %s
+          AND observation_date BETWEEN %s AND %s
+        ORDER BY observation_date
+    """
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+
+        # Enforce read-only at the PostgreSQL session level as a second safety layer.
+        with psycopg.connect(
+            database_url,
+            options="-c default_transaction_read_only=on",
+            row_factory=dict_row,
+            connect_timeout=15,
+        ) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SET TRANSACTION READ ONLY")
+                cursor.execute(query, (station_id, start_date, end_date))
+                return cursor.fetchall()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.exception("Read-only observation query failed")
+        raise HTTPException(
+            502,
+            detail="Could not read actual weather observations.",
+        ) from exc
+
+
+def read_saved_forecasts(station_id: str, start_date: date, end_date: date):
+    url, key = supabase_config()
+    try:
+        response = requests.get(
+            url,
+            headers=sb_headers(key),
+            params={
+                "select": "station,station_id,forecast_date,min_temp_c,mean_temp_c,max_temp_c,precip_mm,model_name,model_version,generated_at",
+                "station_id": f"eq.{station_id}",
+                "and": f"(forecast_date.gte.{start_date.isoformat()},forecast_date.lte.{end_date.isoformat()})",
+                "order": "forecast_date.asc",
+                "limit": "1000",
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        rows = response.json()
+        if not isinstance(rows, list):
+            raise ValueError("Forecast store returned a non-list response")
+        return rows
+    except Exception as exc:
+        log.exception("Saved forecast fallback read failed")
+        raise HTTPException(
+            502,
+            detail="Could not read saved forecast fallback data.",
+        ) from exc
+
+
+@app.get("/weather/{city}")
+def get_weather_with_forecast_fallback(
+    city: str,
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+):
+    """Compatible weather route; actual observations take priority field by field."""
+    if start_date > end_date:
+        raise HTTPException(400, detail="start_date must be on or before end_date")
+
+    _, station_id = normalize_station(city)
+    actual_rows = read_observations_read_only(station_id, start_date, end_date)
+    forecast_rows = read_saved_forecasts(station_id, start_date, end_date)
+
+    actual_by_date = {
+        row["observation_date"]: dict(row)
+        for row in actual_rows
+    }
+    forecast_by_date = {
+        date.fromisoformat(row["forecast_date"]): row
+        for row in forecast_rows
+        if row.get("forecast_date")
+    }
+
+    merged = []
+    for day in sorted(set(actual_by_date) | set(forecast_by_date)):
+        actual = actual_by_date.get(day)
+        forecast = forecast_by_date.get(day)
+        if actual is None and forecast is None:
+            continue
+
+        record = actual or {
+            "climate_identifier": station_id,
+            "observation_date": day,
+            **{column: None for column in OBSERVATION_COLUMNS},
+        }
+        field_sources = {}
+        for observation_field, forecast_field in FORECAST_FALLBACK_FIELDS.items():
+            actual_value = record.get(observation_field)
+            forecast_value = forecast.get(forecast_field) if forecast else None
+            if actual_value is not None:
+                field_sources[observation_field] = "actual"
+            elif forecast_value is not None:
+                record[observation_field] = forecast_value
+                field_sources[observation_field] = "forecast"
+            else:
+                field_sources[observation_field] = None
+
+        record["observation_date"] = day.isoformat()
+        record["field_sources"] = field_sources
+        merged.append(record)
+
+    return merged
+
+
 # --------------------------------------------------
 # GENERATE AND SAVE LIGHTGBM FORECASTS
 # --------------------------------------------------
@@ -358,34 +527,65 @@ def refresh_forecasts(
 
     generated = []
     errors = []
+    expected_dates = {
+        (as_of + timedelta(days=lead)).isoformat()
+        for lead in range(1, 8)
+    }
 
-    # Generate predictions for all stations.
-    for station in STATIONS:
+    # Three total attempts per station, with bounded exponential backoff.
+    for station, station_id in STATIONS.items():
+        station_error = None
+        for attempt in range(1, 4):
+            try:
+                station_forecasts = lightgbm_predictor.predict(station, as_of)
+                if not isinstance(station_forecasts, list) or len(station_forecasts) != 7:
+                    raise ValueError("Expected exactly seven forecast rows")
 
-        try:
-            station_forecasts = lightgbm_predictor.predict(
-                station,
-                as_of,
-            )
+                dates = [str(row.get("forecast_date")) for row in station_forecasts]
+                if len(set(dates)) != 7 or set(dates) != expected_dates:
+                    raise ValueError("Forecast dates must be the next seven unique calendar days")
 
-            generated.extend(station_forecasts)
+                for row in station_forecasts:
+                    if row.get("station") != station:
+                        raise ValueError("Forecast row station does not match requested station")
+                    if str(row.get("station_id")) != station_id:
+                        raise ValueError("Forecast row station_id does not match station mapping")
+                    for field in (
+                        "predicted_min_temp_c",
+                        "predicted_mean_temp_c",
+                        "predicted_max_temp_c",
+                        "predicted_precip_mm",
+                    ):
+                        value = row.get(field)
+                        if value is None or not math.isfinite(float(value)):
+                            raise ValueError(f"Invalid or non-finite prediction: {field}")
 
-        except Exception as exc:
-            log.exception(
-                "Forecast generation failed for %s",
-                station,
-            )
+                generated.extend(station_forecasts)
+                station_error = None
+                break
+            except Exception as exc:
+                station_error = exc
+                log.exception(
+                    "Forecast generation attempt %s/3 failed for %s",
+                    attempt,
+                    station,
+                )
+                if attempt < 3:
+                    time.sleep(2 ** (attempt - 1))
 
+        if station_error is not None:
             errors.append({
                 "station": station,
-                "error": str(exc),
+                "station_id": station_id,
+                "attempts": 3,
+                "error": str(station_error),
             })
 
     if not generated:
         raise HTTPException(
             status_code=502,
             detail={
-                "message": "No forecasts generated",
+                "message": "No station forecasts generated after three attempts each",
                 "errors": errors,
             },
         )
@@ -486,16 +686,38 @@ def refresh_forecasts(
     # RESPONSE
     # --------------------------------------------------
 
-    return {
+    saved_count = len(saved) if isinstance(saved, list) else 0
+    expected_count = len(STATIONS) * 7
+    complete = (
+        not errors
+        and len(generated) == expected_count
+        and len(payload) == expected_count
+        and saved_count == expected_count
+    )
+
+    result = {
+        "status": "complete" if complete else "incomplete",
+        "complete": complete,
+        "expected_count": expected_count,
         "generated_count": len(generated),
-        "saved_count": len(saved) if isinstance(saved, list) else len(generated),
+        "saved_count": saved_count,
         "history_end_date": as_of.isoformat(),
-        "forecast_start_date": (
-            as_of + timedelta(days=1)
-        ).isoformat(),
-        "forecast_end_date": (
-            as_of + timedelta(days=7)
-        ).isoformat(),
+        "forecast_start_date": (as_of + timedelta(days=1)).isoformat(),
+        "forecast_end_date": (as_of + timedelta(days=7)).isoformat(),
         "errors": errors,
-        "forecasts": saved if isinstance(saved, list) else payload,
+        "forecasts": saved if isinstance(saved, list) else [],
     }
+
+    if not complete:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                **result,
+                "message": (
+                    "Forecast refresh incomplete. Successful station forecasts "
+                    "were saved; failed stations will be retried on the next run."
+                ),
+            },
+        )
+
+    return result
