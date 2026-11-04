@@ -1,0 +1,21 @@
+
+name: ATMOSYNC Daily Forecast
+
+on:
+  schedule:
+    - cron: "30 23 * * *"
+  workflow_dispatch:
+
+jobs:
+  refresh-forecasts:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger ATMOSYNC forecast
+        env:
+          REFRESH_URL: https://atmosync-ml-deployment.onrender.com/forecasts/refresh
+          REFRESH_TOKEN: ${{ secrets.ATMOSYNC_REFRESH_TOKEN }}
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --request POST "$REFRESH_URL" \
+            --header "X-Atmosync-Refresh-Token: $REFRESH_TOKEN"
