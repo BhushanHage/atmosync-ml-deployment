@@ -253,11 +253,14 @@ def refresh_forecasts(
     # Map model outputs to the actual Supabase schema.
     generated_at = pd.Timestamp.now(tz="UTC").isoformat()
 
+    
+
     payload = []
 
     for row in generated:
         payload.append({
             "station": row["station"].replace(" ", "_"),
+            "station_id": row["station_id"],
             "forecast_date": row["forecast_date"],
             "generated_at": generated_at,
             "model_name": "LightGBM",
