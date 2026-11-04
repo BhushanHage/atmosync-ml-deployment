@@ -204,6 +204,7 @@ def get_forecasts(
     return {"count": len(rows), "forecasts": rows}
 
 
+
 @app.post("/forecasts/refresh")
 def refresh_forecasts(
     end_date: date | None = None,
@@ -228,14 +229,12 @@ def refresh_forecasts(
 
     url, key = supabase_config()
 
-    # History ends yesterday by default.
-    # Predictions cover today and the next six days.
     as_of = end_date or (date.today() - timedelta(days=1))
 
     generated = []
     errors = []
 
-    # Generate forecasts for all configured stations.
+    # Generate predictions for all stations.
     for station in STATIONS:
         try:
             station_forecasts = lightgbm_predictor.predict(station, as_of)
@@ -251,32 +250,31 @@ def refresh_forecasts(
             detail={"message": "No forecasts generated", "errors": errors},
         )
 
-    # Map model prediction fields to the actual Supabase table schema.
+    # Map model outputs to the actual Supabase schema.
     generated_at = pd.Timestamp.now(tz="UTC").isoformat()
 
     payload = []
 
     for row in generated:
-        payload.append(
-            {
-                "station": row["station"].replace(" ", "_"),
-                "forecast_date": row["forecast_date"],
-                "generated_at": generated_at,
-                "model_name": "LightGBM",
-                "model_version": "lightgbm-v1",
-                "max_temp_c": row.get("predicted_max_temp_c"),
-                "min_temp_c": row.get("predicted_min_temp_c"),
-                "mean_temp_c": row.get("predicted_mean_temp_c"),
-                "precip_mm": row.get("predicted_precip_mm"),
-            }
-        )
+        payload.append({
+            "station": row["station"].replace(" ", "_"),
+            "forecast_date": row["forecast_date"],
+            "generated_at": generated_at,
+            "model_name": "LightGBM",
+            "model_version": "lightgbm-v1",
+            "max_temp_c": row.get("predicted_max_temp_c"),
+            "min_temp_c": row.get("predicted_min_temp_c"),
+            "mean_temp_c": row.get("predicted_mean_temp_c"),
+            "precip_mm": row.get("predicted_precip_mm"),
+        })
 
-    # Save forecasts using the existing unique constraint.
+    # Save predictions to Supabase.
     try:
         r = requests.post(
             url,
             headers=sb_headers(
-                key, "resolution=merge-duplicates,return=representation"
+                key,
+                "resolution=merge-duplicates,return=representation",
             ),
             params={"on_conflict": "station,forecast_date"},
             json=payload,
@@ -289,9 +287,16 @@ def refresh_forecasts(
     except requests.RequestException as exc:
         log.exception("Supabase forecast write failed: %s", exc)
 
+        if isinstance(exc, requests.HTTPError) and exc.response is not None:
+            log.error(
+                "Supabase HTTP status: %s | Response: %s",
+                exc.response.status_code,
+                exc.response.text,
+            )
+
         raise HTTPException(
             status_code=502,
-            detail="Supabase forecast upsert failed. Check database schema, permissions and unique constraint.",
+            detail="Supabase forecast upsert failed. Check Render logs.",
         ) from exc
 
     return {
