@@ -6,7 +6,7 @@ import os
 import time
 import math
 from contextlib import asynccontextmanager
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 import numpy as np
@@ -24,6 +24,46 @@ from forecasting.lightgbm_inference import (
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 log = logging.getLogger("atmosync-api")
+
+# Forecast-table timestamps are created and serialized in India Standard Time.
+IST = ZoneInfo("Asia/Kolkata")
+FORECAST_TIMESTAMP_COLUMNS = ("generated_at", "created_at", "updated_at")
+
+
+def ist_now_iso() -> str:
+    """Return the current instant with an explicit +05:30 IST offset."""
+    return datetime.now(IST).isoformat(timespec="microseconds")
+
+
+def timestamp_to_ist(value: Any) -> str | None:
+    """Normalize an ISO timestamp to an explicit Asia/Kolkata offset."""
+    if value is None or value == "":
+        return None
+    parsed = datetime.fromisoformat(
+        value.replace("Z", "+00:00") if isinstance(value, str) else value
+    )
+    if parsed.tzinfo is None:
+        # Supabase TIMESTAMPTZ responses are normally offset-aware. If a
+        # legacy value is naive, interpret it as UTC rather than guessing.
+        parsed = parsed.replace(tzinfo=ZoneInfo("UTC"))
+    return parsed.astimezone(IST).isoformat(timespec="microseconds")
+
+
+def format_forecast_timestamps_ist(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert forecast timestamp fields to IST for API responses."""
+    formatted = []
+    for source_row in rows:
+        row = dict(source_row)
+        for column in FORECAST_TIMESTAMP_COLUMNS:
+            value = row.get(column)
+            if not value:
+                continue
+            try:
+                row[column] = timestamp_to_ist(value)
+            except (TypeError, ValueError):
+                log.warning("Could not format %s as IST: %r", column, value)
+        formatted.append(row)
+    return formatted
 
 # Model instances
 tcn_predictor = None
@@ -358,7 +398,7 @@ def get_forecasts(
 
     return {
         "count": len(rows),
-        "forecasts": rows,
+        "forecasts": format_forecast_timestamps_ist(rows),
     }
 
 
@@ -635,10 +675,45 @@ def refresh_forecasts(
         )
 
     # --------------------------------------------------
-    # MAP MODEL OUTPUTS TO SUPABASE SCHEMA
+    # PRESERVE ORIGINAL CREATED_AT VALUES BEFORE UPSERT
     # --------------------------------------------------
 
-    generated_at = pd.Timestamp.now(tz="Asia/Kolkata").isoformat()
+    forecast_dates = sorted(expected_dates)
+    try:
+        existing_response = requests.get(
+            url,
+            headers=sb_headers(key),
+            params={
+                "select": "station,forecast_date,created_at",
+                "forecast_date": f"gte.{forecast_dates[0]}",
+                "and": f"(forecast_date.lte.{forecast_dates[-1]})",
+                "limit": "2000",
+            },
+            timeout=30,
+        )
+        existing_response.raise_for_status()
+        existing_rows = existing_response.json()
+        if not isinstance(existing_rows, list):
+            raise ValueError("Existing forecast timestamp query returned a non-list response")
+    except (requests.RequestException, ValueError) as exc:
+        log.exception("Could not read existing created_at values before forecast upsert")
+        raise HTTPException(
+            status_code=502,
+            detail="Could not preserve existing forecast creation timestamps.",
+        ) from exc
+
+    existing_created_at = {
+        (item.get("station"), item.get("forecast_date")): item.get("created_at")
+        for item in existing_rows
+    }
+
+    # generated_at records when prediction generation completed.
+    generated_at = ist_now_iso()
+    # updated_at records this refresh/upsert operation.
+    updated_at = ist_now_iso()
+    # New rows receive their first-created timestamp. Existing rows retain
+    # the original created_at fetched above.
+    inserted_at = ist_now_iso()
 
     payload = []
 
@@ -665,20 +740,22 @@ def refresh_forecasts(
                 detail=f"Missing station_id for station: {station}",
             )
          
-        # Intentionally omit created_at: Supabase sets it on first insert;
-        # upserts must preserve the original creation timestamp.
+        forecast_date = str(row["forecast_date"])
+        original_created_at = existing_created_at.get((station, forecast_date))
+
         payload.append({
             "station": station,
             "station_id": station_id,
-            "forecast_date": row["forecast_date"],
+            "forecast_date": forecast_date,
             "generated_at": generated_at,
+            "created_at": timestamp_to_ist(original_created_at) or inserted_at,
             "model_name": "LightGBM",
             "model_version": "lightgbm-v1",
             "max_temp_c": row.get("predicted_max_temp_c"),
             "min_temp_c": row.get("predicted_min_temp_c"),
             "mean_temp_c": row.get("predicted_mean_temp_c"),
             "precip_mm": row.get("predicted_precip_mm"),
-            "updated_at": generated_at,
+            "updated_at": updated_at,
         })
         
     # --------------------------------------------------
@@ -751,7 +828,7 @@ def refresh_forecasts(
         "forecast_start_date": (as_of + timedelta(days=1)).isoformat(),
         "forecast_end_date": (as_of + timedelta(days=7)).isoformat(),
         "errors": errors,
-        "forecasts": saved if isinstance(saved, list) else [],
+        "forecasts": format_forecast_timestamps_ist(saved) if isinstance(saved, list) else [],
     }
 
     if not complete:
