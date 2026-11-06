@@ -594,7 +594,7 @@ def refresh_forecasts(
     # MAP MODEL OUTPUTS TO SUPABASE SCHEMA
     # --------------------------------------------------
 
-    generated_at = pd.Timestamp.now(tz="UTC").isoformat()
+    generated_at = pd.Timestamp.now(tz="Asia/Kolkata").isoformat()
 
     payload = []
 
@@ -620,12 +620,13 @@ def refresh_forecasts(
                 status_code=500,
                 detail=f"Missing station_id for station: {station}",
             )
-
+         
         payload.append({
             "station": station,
             "station_id": station_id,
             "forecast_date": row["forecast_date"],
             "generated_at": generated_at,
+            "created_at": generated_at,
             "model_name": "LightGBM",
             "model_version": "lightgbm-v1",
             "max_temp_c": row.get("predicted_max_temp_c"),
@@ -634,7 +635,7 @@ def refresh_forecasts(
             "precip_mm": row.get("predicted_precip_mm"),
             "updated_at": generated_at,
         })
-
+        
     # --------------------------------------------------
     # SAVE PREDICTIONS TO SUPABASE
     # --------------------------------------------------
