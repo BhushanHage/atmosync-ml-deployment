@@ -250,6 +250,7 @@ def sb_headers(key, prefer=None):
 # READ SAVED FORECASTS
 # --------------------------------------------------
 
+
 @app.get("/forecasts")
 def get_forecasts(
     station: str | None = Query(default=None),
@@ -257,8 +258,28 @@ def get_forecasts(
     end_date: date | None = None,
     limit: int = Query(default=500, ge=1, le=2000),
 ):
-
     url, key = supabase_config()
+
+    # Default window: today + next 6 days (7 days total).
+    # Use the same timezone as the forecast generation pipeline.
+    if start_date is None and end_date is None:
+        today = pd.Timestamp.now(
+            tz=ZoneInfo("Asia/Kolkata")
+        ).date()
+
+        start_date = today
+        end_date = today + timedelta(days=6)
+
+    # Validate the requested date range.
+    if (
+        start_date is not None
+        and end_date is not None
+        and start_date > end_date
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="start_date must be on or before end_date.",
+        )
 
     params = {
         "select": "*",
@@ -266,6 +287,7 @@ def get_forecasts(
         "limit": str(limit),
     }
 
+    # Validate and filter station.
     if station:
         slug = station.strip().lower().replace(" ", "_")
 
@@ -276,23 +298,31 @@ def get_forecasts(
 
         if slug not in valid_slugs:
             raise HTTPException(
-                422,
-                detail=f"Unknown station. Choose: {', '.join(sorted(valid_slugs))}",
+                status_code=422,
+                detail=(
+                    f"Unknown station. Choose: "
+                    f"{', '.join(sorted(valid_slugs))}"
+                ),
             )
 
         params["station"] = f"eq.{slug}"
 
-    if start_date and end_date:
+    # Apply inclusive date filters.
+    if start_date is not None and end_date is not None:
         params["and"] = (
             f"(forecast_date.gte.{start_date.isoformat()},"
             f"forecast_date.lte.{end_date.isoformat()})"
         )
 
-    elif start_date:
-        params["forecast_date"] = f"gte.{start_date.isoformat()}"
+    elif start_date is not None:
+        params["forecast_date"] = (
+            f"gte.{start_date.isoformat()}"
+        )
 
-    elif end_date:
-        params["forecast_date"] = f"lte.{end_date.isoformat()}"
+    elif end_date is not None:
+        params["forecast_date"] = (
+            f"lte.{end_date.isoformat()}"
+        )
 
     try:
         r = requests.get(
@@ -305,18 +335,32 @@ def get_forecasts(
         r.raise_for_status()
         rows = r.json()
 
+        if not isinstance(rows, list):
+            raise ValueError(
+                "Forecast database returned an invalid response."
+            )
+
     except requests.RequestException as exc:
         log.exception("Supabase forecast read failed")
 
         raise HTTPException(
-            502,
+            status_code=502,
             detail="Could not read saved forecasts",
+        ) from exc
+
+    except ValueError as exc:
+        log.exception("Invalid forecast response")
+
+        raise HTTPException(
+            status_code=502,
+            detail="Invalid response from forecast storage",
         ) from exc
 
     return {
         "count": len(rows),
         "forecasts": rows,
     }
+
 
 
 
