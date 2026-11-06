@@ -621,12 +621,13 @@ def refresh_forecasts(
                 detail=f"Missing station_id for station: {station}",
             )
          
+        # Intentionally omit created_at: Supabase sets it on first insert;
+        # upserts must preserve the original creation timestamp.
         payload.append({
             "station": station,
             "station_id": station_id,
             "forecast_date": row["forecast_date"],
             "generated_at": generated_at,
-            "created_at": generated_at,
             "model_name": "LightGBM",
             "model_version": "lightgbm-v1",
             "max_temp_c": row.get("predicted_max_temp_c"),
